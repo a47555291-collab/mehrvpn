@@ -44,9 +44,12 @@ need_pkgs(){
 source_tree(){
   local here dir
   here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
-  if [[ -f "$here/panel/app.py" && -f "$here/requirements.txt" ]]; then printf '%s\n' "$here"; return; fi
+  if [[ -f "$here/panel/app.py" && -f "$here/requirements.txt" ]]; then
+    printf '%s\n' "$here"
+    return
+  fi
   TMP="$(mktemp -d /tmp/mehrvpn.XXXXXX)"
-  log "Downloading MehrVPN source..."
+  log "Downloading MehrVPN source..." >&2
   curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
     "$REPO/archive/refs/heads/$REF.tar.gz" -o "$TMP/mehrvpn.tar.gz"
   tar -xzf "$TMP/mehrvpn.tar.gz" -C "$TMP"
@@ -57,6 +60,7 @@ source_tree(){
 
 install_source(){
   local s="$1"
+  [[ -d "$s/panel" && -d "$s/scripts" ]] || die "MehrVPN source archive is incomplete."
   install -d -m 755 "$ROOT"
   cp -a "$s/panel" "$s/scripts" "$ROOT/"
   install -m 755 "$s/install.sh" "$ROOT/install.sh"
@@ -157,8 +161,8 @@ install_all(){
   root_check; os_check
   [[ ! -f "$ENV_FILE" ]] || die "MehrVPN is already installed. Use: mehrvpn update"
   local src host port admin
-  src="$(source_tree)"
   need_pkgs
+  src="$(source_tree)"
   ensure_dirs
   install_source "$src"
   python3 -m venv "$ROOT/.venv"
