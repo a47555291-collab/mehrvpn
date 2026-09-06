@@ -2,43 +2,36 @@
 
 A self-hosted OpenVPN management panel for Debian/Ubuntu servers.
 
-MehrVPN is designed around a small privilege boundary:
+**Browser → Nginx/TLS → FastAPI → Unix-socket agent → OpenVPN/PKI**
 
-**Browser → Nginx/TLS → FastAPI panel → Unix-socket privileged agent → OpenVPN/PKI**
+Features include client provisioning, quota/expiry policy, accounting, revocation, encrypted backups, RBAC and a responsive web UI.
 
-It provides client provisioning, expiry/quota policy, accounting, revocation, backups, RBAC and an operator-friendly web UI.
+## One-command install
 
-## Quick install
-
-On a fresh supported server:
+On a fresh supported VPS, run:
 
 ```bash
 bash <(curl -fsSL --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/a47555291-collab/mehrvpn/main/install.sh)
 ```
 
-The installer is interactive by default. It asks for the panel hostname/IP and creates the owner password securely without storing the plaintext password.
+The installer asks for the panel hostname/IP and owner username, then securely prompts for the owner password.
 
-For unattended installation:
+Unattended mode:
 
 ```bash
 MEHRVPN_HOST=vpn.example.com MEHRVPN_PORT=8443 MEHRVPN_ADMIN=admin \
-  bash <(curl -fsSL --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/a47555291-collab/mehrvpn/main/install.sh)
+bash <(curl -fsSL --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/a47555291-collab/mehrvpn/main/install.sh)
 ```
 
-> **Important:** the default certificate is self-signed. For a public production deployment, replace it with a certificate trusted by your clients before treating the panel as a finished internet-facing service.
+## Supported systems
 
-## Supported operating systems
-
-- Ubuntu 22.04
-- Ubuntu 24.04
-- Debian 12
-- Debian 13
-
-A Linux server with `/dev/net/tun` is required.
+- Ubuntu 22.04 / 24.04
+- Debian 12 / 13
+- Linux TUN device required
 
 ## Management
 
-After installation, `/usr/local/bin/mehrvpn` can be installed as a convenience wrapper, or the repository installer can be invoked directly:
+After installation:
 
 ```text
 mehrvpn status
@@ -49,25 +42,27 @@ mehrvpn update
 mehrvpn uninstall
 ```
 
-Updates preserve the application database and OpenVPN PKI. The installer creates a timestamped OpenVPN configuration backup before an update.
+Updates preserve the panel database and OpenVPN PKI and create a timestamped server configuration backup.
 
-## Architecture and security
+## Security model
 
-- FastAPI application runs as the unprivileged `mehrvpn` user.
-- OpenVPN policy operations are isolated behind a local Unix socket.
-- Passwords use Argon2 hashing.
-- Session cookies are secure/HTTP-only with CSRF and origin checks.
+- Web panel runs as the unprivileged `mehrvpn` user.
+- Privileged OpenVPN operations are isolated behind Unix sockets.
+- Passwords use Argon2.
+- Secure HTTP-only sessions use CSRF/origin checks and login rate limiting.
+- Quota/expiry checks fail closed when the monitoring agent cannot enforce policy.
 - Client names are strictly validated.
-- Quota and expiry enforcement is fail-closed.
-- Accounting is designed to be replay-safe.
-- OpenVPN configuration changes are constrained to the supported upstream layout.
-- The bundled upstream OpenVPN installer is verified against the SHA-256 value in `vendor/source.json` before use.
-- systemd units apply filesystem and capability restrictions.
-- Security headers and a restrictive CSP are emitted by the application.
+- systemd units use filesystem and capability restrictions.
+- Nginx terminates TLS and the application emits security headers/CSP.
+- The OpenVPN installer is obtained from the upstream Nyr project at install time.
+
+## TLS
+
+The initial panel certificate is self-signed so the installer can work without a domain or external certificate service. For an internet-facing production deployment, replace it with a certificate trusted by your clients and reload Nginx.
 
 ## Backups
 
-The panel includes encrypted backup primitives and an operator backup script. Always test restoration on a separate server before relying on backups for disaster recovery.
+`mehrvpn backup` creates an encrypted disaster-recovery archive using the panel's authenticated AES-GCM backup utility. Keep the backup password separately and test restoration on another VPS before relying on it.
 
 ## Development
 
@@ -78,32 +73,10 @@ pip install -r requirements-dev.txt
 pytest -q
 ```
 
-The browser/UI tests require Node.js:
-
-```bash
-npm ci
-node tests/test_ui.cjs
-```
-
 ## Production validation
 
-Passing tests is not the same as proving a clean VPS deployment. Before a production rollout, validate at minimum:
-
-1. Fresh install on a clean supported VPS.
-2. Browser login over HTTPS.
-3. Client creation and download.
-4. Real OpenVPN connection from a separate client.
-5. Routing and DNS behavior.
-6. Quota enforcement with real traffic.
-7. Expiry/suspension behavior.
-8. Reboot recovery of all services.
-9. Agent/OpenVPN failure recovery.
-10. Backup and restore.
-11. Firewall/cloud-security-group rules.
-12. Mobile and desktop browsers.
-
-See `docs/VALIDATION.md` and `docs/ACCEPTANCE.md`.
+A passing CI job does not prove a real VPS deployment. Before production use, validate a clean install, browser login, real OpenVPN client connection, routing/DNS, quota and expiry enforcement, reboot recovery, agent failure recovery, firewall rules and backup restoration.
 
 ## License
 
-See `LICENSE`.
+MIT — see `LICENSE`.
