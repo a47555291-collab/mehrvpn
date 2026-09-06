@@ -1,0 +1,7 @@
+fastapi==0.116.1
+uvicorn==0.35.0
+pydantic==2.11.7
+argon2-cffi==25.1.0
+cryptography==45.0.6
+qrcode==8.2
+pillow==11.3.0
