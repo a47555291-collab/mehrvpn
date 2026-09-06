@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# MehrVPN one-command installer and manager.
 set -Eeuo pipefail
 umask 077
 
@@ -13,11 +12,12 @@ BACKUP="/var/backups/mehrvpn"
 ENV_FILE="$ETC/panel.env"
 VPN_CONF="/etc/openvpn/server/server.conf"
 TMP=""
+SOURCE_DIR=""
 
 log(){ printf '\n[MehrVPN] %s\n' "$*"; }
 die(){ printf '\n[MehrVPN][ERROR] %s\n' "$*" >&2; exit 1; }
 trap '[[ -z "${TMP:-}" ]] || rm -rf "$TMP"' EXIT
-trap 'die "Installer stopped at line $LINENO. Run: journalctl -u mehrvpn-agent -u mehrvpn-web --no-pager -n 100"' ERR
+trap 'die "Installer stopped at line $LINENO. Check: journalctl -u mehrvpn-agent -u mehrvpn-web --no-pager -n 100"' ERR
 
 root_check(){ [[ $EUID -eq 0 ]] || die "Run as root."; }
 os_check(){
@@ -31,10 +31,7 @@ need_pkgs(){
   for p in python3 python3-venv python3-pip nginx openssl curl ca-certificates tar iproute2 openvpn; do
     dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q 'install ok installed' || missing+=("$p")
   done
-  if ((${#missing[@]}==0)); then
-    log "All required OS packages are already installed; skipping apt update."
-    return
-  fi
+  if ((${#missing[@]}==0)); then log "All required OS packages are already installed; skipping apt update."; return; fi
   log "Installing: ${missing[*]}"
   export DEBIAN_FRONTEND=noninteractive
   apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
@@ -45,22 +42,22 @@ source_tree(){
   local here dir
   here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P || true)"
   if [[ -f "$here/panel/app.py" && -f "$here/requirements.txt" ]]; then
-    printf '%s\n' "$here"
-    return
+    SOURCE_DIR="$here"
+    return 0
   fi
   TMP="$(mktemp -d /tmp/mehrvpn.XXXXXX)"
-  log "Downloading MehrVPN source..." >&2
+  log "Downloading MehrVPN source..."
   curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
     "$REPO/archive/refs/heads/$REF.tar.gz" -o "$TMP/mehrvpn.tar.gz"
   tar -xzf "$TMP/mehrvpn.tar.gz" -C "$TMP"
   dir="$(find "$TMP" -mindepth 1 -maxdepth 1 -type d -name 'mehrvpn-*' -print -quit)"
   [[ -n "$dir" ]] || die "Invalid MehrVPN archive."
-  printf '%s\n' "$dir"
+  SOURCE_DIR="$dir"
 }
 
 install_source(){
-  local s="$1"
-  [[ -d "$s/panel" && -d "$s/scripts" ]] || die "MehrVPN source archive is incomplete."
+  local s="$SOURCE_DIR"
+  [[ -d "$s/panel" && -d "$s/scripts" ]] || die "MehrVPN source archive is incomplete: $s"
   install -d -m 755 "$ROOT"
   cp -a "$s/panel" "$s/scripts" "$ROOT/"
   install -m 755 "$s/install.sh" "$ROOT/install.sh"
@@ -152,19 +149,16 @@ create_owner(){
   MEHRVPN_DB="$DATA/panel.db" "$ROOT/.venv/bin/python" -m panel.cli owner --username "$admin"
 }
 
-wait_agent(){
-  for _ in {1..30}; do [[ -S /run/mehrvpn/control.sock ]] && return 0; sleep 1; done
-  die "MehrVPN agent socket did not appear."
-}
+wait_agent(){ for _ in {1..30}; do [[ -S /run/mehrvpn/control.sock ]] && return 0; sleep 1; done; die "MehrVPN agent socket did not appear."; }
 
 install_all(){
   root_check; os_check
   [[ ! -f "$ENV_FILE" ]] || die "MehrVPN is already installed. Use: mehrvpn update"
-  local src host port admin
+  local host port admin
+  source_tree
   need_pkgs
-  src="$(source_tree)"
   ensure_dirs
-  install_source "$src"
+  install_source
   python3 -m venv "$ROOT/.venv"
   "$ROOT/.venv/bin/pip" install --disable-pip-version-check -r "$ROOT/requirements.txt"
   host="${MEHRVPN_HOST:-}"; port="${MEHRVPN_PORT:-8443}"; admin="${MEHRVPN_ADMIN:-admin}"
@@ -195,12 +189,12 @@ install_all(){
 
 update_all(){
   root_check; [[ -f "$ENV_FILE" ]] || die "MehrVPN is not installed."
-  local src; src="$(source_tree)"
+  source_tree
   systemctl stop mehrvpn-web.service 2>/dev/null || true
-  cp -a "$src/panel/." "$ROOT/panel/"
-  cp -a "$src/scripts/." "$ROOT/scripts/"
-  install -m 755 "$src/install.sh" "$ROOT/install.sh"
-  install -m 644 "$src/requirements.txt" "$src/constraints.txt" "$ROOT/"
+  cp -a "$SOURCE_DIR/panel/." "$ROOT/panel/"
+  cp -a "$SOURCE_DIR/scripts/." "$ROOT/scripts/"
+  install -m 755 "$SOURCE_DIR/install.sh" "$ROOT/install.sh"
+  install -m 644 "$SOURCE_DIR/requirements.txt" "$SOURCE_DIR/constraints.txt" "$ROOT/"
   "$ROOT/.venv/bin/pip" install --disable-pip-version-check -r "$ROOT/requirements.txt"
   chmod 755 "$ROOT/install.sh" "$ROOT/scripts/"*.sh "$ROOT/scripts/mehrvpn" 2>/dev/null || true
   systemctl daemon-reload
