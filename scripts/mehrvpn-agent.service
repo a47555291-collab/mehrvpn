@@ -1,0 +1,25 @@
+[Unit]
+Description=MehrVPN privileged OpenVPN policy agent
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/mehrvpn
+ExecStart=/opt/mehrvpn/.venv/bin/python -m panel.agent
+Restart=on-failure
+RestartSec=3
+RuntimeDirectory=mehrvpn
+RuntimeDirectoryMode=0755
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/etc/openvpn/server /var/lib/mehrvpn-agent /run/mehrvpn
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
