@@ -1,0 +1,27 @@
+[Unit]
+Description=MehrVPN web panel
+After=network.target mehrvpn-agent.service
+Wants=mehrvpn-agent.service
+
+[Service]
+User=mehrvpn
+Group=mehrvpn
+WorkingDirectory=/opt/mehrvpn
+EnvironmentFile=/etc/mehrvpn/panel.env
+ExecStart=/opt/mehrvpn/.venv/bin/python -m uvicorn panel.app:app --host 127.0.0.1 --port 8097 --workers 1 --no-access-log --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/mehrvpn
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
